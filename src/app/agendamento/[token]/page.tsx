@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { agendamento, barbeiro, servico } from "@/db/schema";
 import { formatarReais } from "@/lib/dinheiro";
 import { agora, formatarDataLonga, formatarHora, ymdDe } from "@/lib/tempo";
+import { linkAvaliacaoGoogle } from "@/lib/config";
 import { Gerenciar } from "./gerenciar";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function Page({ params, searchParams }: PageProps<"/agendam
     .innerJoin(servico, eq(servico.id, agendamento.servicoId))
     .where(eq(agendamento.token, token));
   if (!ag) notFound();
+  const linkGoogle = ag.status === "atendido" ? await linkAvaliacaoGoogle() : null;
 
   const futuro = ag.inicio > agora();
   const podeAlterar = ag.status === "agendado" && futuro;
@@ -81,6 +83,12 @@ export default async function Page({ params, searchParams }: PageProps<"/agendam
         <Gerenciar token={token} />
       ) : (
         <p className="mt-4 text-center text-sm text-muted">Este agendamento não pode mais ser alterado.</p>
+      )}
+
+      {linkGoogle && (
+        <a href={linkGoogle} target="_blank" rel="noreferrer" className="btn btn-primario mt-4 w-full">
+          Avaliar no Google
+        </a>
       )}
 
       <p className="mt-8 text-center text-sm">

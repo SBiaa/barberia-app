@@ -112,6 +112,8 @@ export const agendamento = pgTable(
     precoCentavos: integer("preco_centavos").notNull(),
     status: statusAgendamento("status").notNull().default("agendado"),
     token: text("token").notNull(),
+    lembreteEnviadoEm: timestamp("lembrete_enviado_em", { withTimezone: true }),
+    avaliacaoPedidaEm: timestamp("avaliacao_pedida_em", { withTimezone: true }),
     criadoEm: timestamp("criado_em", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -140,3 +142,9 @@ export const lancamento = pgTable(
     index("lancamento_data_idx").on(t.data),
   ],
 );
+
+// Configurações simples chave/valor (ex.: link de avaliação do Google).
+export const configuracao = pgTable("configuracao", {
+  chave: text("chave").primaryKey(),
+  valor: text("valor").notNull(),
+});

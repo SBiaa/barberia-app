@@ -2,12 +2,14 @@ import { asc } from "drizzle-orm";
 import { db } from "@/db";
 import { barbeiro, horarioFuncionamento, servico } from "@/db/schema";
 import { minParaHora } from "@/lib/tempo";
-import { BarbeiroForm, GradeHorarios, ServicoForm } from "./forms";
+import { linkAvaliacaoGoogle } from "@/lib/config";
+import { BarbeiroForm, GradeHorarios, LinkAvaliacaoForm, ServicoForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 
 export default async function Cadastros() {
-  const [servicos, barbeiros, horarios] = await Promise.all([
+  const [linkGoogle, servicos, barbeiros, horarios] = await Promise.all([
+    linkAvaliacaoGoogle(),
     db.select().from(servico).orderBy(asc(servico.nome)),
     db.select().from(barbeiro).orderBy(asc(barbeiro.nome)),
     db.select().from(horarioFuncionamento),
@@ -24,6 +26,15 @@ export default async function Cadastros() {
 
   return (
     <div className="space-y-10">
+      <section className="space-y-3">
+        <h1 className="titulo text-sm">Avaliação no Google</h1>
+        <p className="text-sm text-muted">
+          Cole o link de avaliação do Perfil da Empresa. Depois de um atendimento, aparece o botão “Pedir avaliação” na agenda
+          e o link também é mostrado ao cliente na página do agendamento.
+        </p>
+        <LinkAvaliacaoForm atual={linkGoogle ?? ""} />
+      </section>
+
       <section className="space-y-3">
         <h1 className="titulo text-sm">Serviços</h1>
         {servicos.map((s) => (

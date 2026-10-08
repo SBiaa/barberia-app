@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { agendamento, barbeiro, cliente, servico } from "@/db/schema";
 import { formatarReais } from "@/lib/dinheiro";
 import {
+  agora,
   diaSemanaDe,
   formatarDataLonga,
   formatarHora,
@@ -14,6 +15,10 @@ import {
   ymdValido,
 } from "@/lib/tempo";
 import { linkWhatsapp, mascararWhatsapp } from "@/lib/whatsapp";
+import { linkAvaliacaoGoogle } from "@/lib/config";
+import { msgAvaliacao, msgLembrete, whatsappCom } from "@/lib/mensagens";
+import { urlSite } from "@/lib/site";
+import { BotoesWhatsapp } from "./botoes-whatsapp";
 import { AcoesAgendamento } from "./acoes-agendamento";
 import { NovoAgendamento } from "./novo-agendamento";
 
@@ -38,7 +43,8 @@ export default async function Agenda({ searchParams }: PageProps<"/painel">) {
   const inicioVista = semana ? somarDias(dia, -((dow + 6) % 7)) : dia;
   const fimVista = somarDias(inicioVista, semana ? 7 : 1);
 
-  const [barbeiros, servicos, itens] = await Promise.all([
+  const [linkGoogle, barbeiros, servicos, itens] = await Promise.all([
+    linkAvaliacaoGoogle(),
     db.select().from(barbeiro).where(eq(barbeiro.ativo, true)).orderBy(asc(barbeiro.nome)),
     db.select().from(servico).where(eq(servico.ativo, true)).orderBy(asc(servico.nome)),
     db
@@ -49,6 +55,8 @@ export default async function Agenda({ searchParams }: PageProps<"/painel">) {
         status: agendamento.status,
         preco: agendamento.precoCentavos,
         token: agendamento.token,
+        lembreteEm: agendamento.lembreteEnviadoEm,
+        avaliacaoEm: agendamento.avaliacaoPedidaEm,
         barbeiro: barbeiro.nome,
         servico: servico.nome,
         cliente: cliente.nome,
@@ -138,6 +146,21 @@ export default async function Agenda({ searchParams }: PageProps<"/painel">) {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <span className={`text-xs ${COR[a.status]}`}>{ROTULO[a.status]}</span>
+                  <BotoesWhatsapp
+                    id={a.id}
+                    lembrete={
+                      a.status === "agendado" && a.inicio > agora()
+                        ? whatsappCom(a.whatsapp, msgLembrete({ nome: a.cliente, inicio: a.inicio, servico: a.servico, link: `${urlSite()}/agendamento/${a.token}` }))
+                        : undefined
+                    }
+                    avaliacao={
+                      a.status === "atendido" && linkGoogle
+                        ? whatsappCom(a.whatsapp, msgAvaliacao({ nome: a.cliente, linkGoogle }))
+                        : undefined
+                    }
+                    lembreteEnviado={!!a.lembreteEm}
+                    avaliacaoEnviada={!!a.avaliacaoEm}
+                  />
                   <AcoesAgendamento id={a.id} status={a.status} dia={ymdDe(a.inicio)} hora={formatarHora(a.inicio)} />
                 </div>
               </article>

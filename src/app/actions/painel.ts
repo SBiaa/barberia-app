@@ -1,7 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -10,6 +10,7 @@ import {
   barbeiro,
   bloqueio,
   cliente,
+  configuracao,
   horarioFuncionamento,
   lancamento,
   servico,
@@ -298,5 +299,50 @@ export async function removerLancamento(id: string): Promise<Res> {
   if (!z.uuid().safeParse(id).success) return falha("Lançamento inválido.");
   await db.delete(lancamento).where(and(eq(lancamento.id, id), isNull(lancamento.agendamentoId)));
   revalidatePath("/painel", "layout");
+  return ok;
+}
+
+// ---------- Relacionamento (Fase 3) ----------
+
+export async function marcarMensagemEnviada(id: string, tipo: "lembrete" | "avaliacao"): Promise<Res> {
+  await exigirSessao();
+  if (!z.uuid().safeParse(id).success) return falha("Agendamento inválido.");
+  await db
+    .update(agendamento)
+    .set(tipo === "lembrete" ? { lembreteEnviadoEm: new Date() } : { avaliacaoPedidaEm: new Date() })
+    .where(eq(agendamento.id, id));
+  revalidatePath("/painel", "layout");
+  return ok;
+}
+
+export async function salvarLinkAvaliacao(f: FormData): Promise<Res> {
+  await exigirSessao();
+  const url = texto(f, "linkGoogle");
+  if (!url) {
+    await db.delete(configuracao).where(eq(configuracao.chave, "link_avaliacao_google"));
+  } else {
+    if (!/^https:\/\/[^\s]+$/.test(url)) return falha("Informe um link começando com https://");
+    await db
+      .insert(configuracao)
+      .values({ chave: "link_avaliacao_google", valor: url })
+      .onConflictDoUpdate({ target: configuracao.chave, set: { valor: url } });
+  }
+  revalidatePath("/painel", "layout");
+  revalidatePath("/agendamento/[token]", "page");
+  return ok;
+}
+
+/** LGPD: remove os dados pessoais do cliente, mantendo o histórico financeiro anônimo. */
+export async function anonimizarCliente(id: string): Promise<Res> {
+  await exigirSessao();
+  if (!z.uuid().safeParse(id).success) return falha("Cliente inválido.");
+  await db.batch([
+    db
+      .update(agendamento)
+      .set({ status: "cancelado" })
+      .where(and(eq(agendamento.clienteId, id), eq(agendamento.status, "agendado"), gt(agendamento.inicio, new Date()))),
+    db.update(cliente).set({ nome: "Cliente removido", whatsapp: `removido-${id}` }).where(eq(cliente.id, id)),
+  ]);
+  revalidatePath("/painel/clientes");
   return ok;
 }

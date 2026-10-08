@@ -15,6 +15,13 @@
       "when": 1791459649693,
       "tag": "0001_agendamento_sem_conflito",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791462082108,
+      "tag": "0002_fase3",
+      "breakpoints": true
     }
   ]
 }

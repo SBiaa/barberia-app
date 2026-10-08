@@ -7,6 +7,7 @@ import {
   alternarServico,
   salvarBarbeiro,
   salvarHorarios,
+  salvarLinkAvaliacao,
   salvarServico,
   type Res,
 } from "@/app/actions/painel";
@@ -100,6 +101,27 @@ export function GradeHorarios({ barbeiroId, inicial }: { barbeiroId: string; ini
       ))}
       {(erro || msg) && <p role="alert" className={`text-sm ${erro ? "text-danger" : "text-ok"}`}>{erro ?? msg}</p>}
       <button className="btn btn-primario" disabled={pendente}>Salvar horários</button>
+    </form>
+  );
+}
+
+export function LinkAvaliacaoForm({ atual }: { atual: string }) {
+  const { erro, msg, pendente, rodar } = useAcao();
+  return (
+    <form className="card space-y-3" action={(f) => rodar(() => salvarLinkAvaliacao(f))}>
+      <div>
+        <label className="rotulo" htmlFor="linkGoogle">Link para avaliar no Google</label>
+        <input
+          id="linkGoogle"
+          name="linkGoogle"
+          className="campo"
+          defaultValue={atual}
+          placeholder="https://g.page/r/…/review"
+          inputMode="url"
+        />
+      </div>
+      {(erro || msg) && <p role="alert" className={`text-sm ${erro ? "text-danger" : "text-ok"}`}>{erro ?? msg}</p>}
+      <button className="btn btn-primario" disabled={pendente}>Salvar</button>
     </form>
   );
 }
