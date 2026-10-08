@@ -1,7 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
@@ -11,6 +11,7 @@ import {
   bloqueio,
   cliente,
   horarioFuncionamento,
+  lancamento,
   servico,
 } from "@/db/schema";
 import { ehConflitoDeHorario } from "@/lib/erros";
@@ -29,16 +30,20 @@ function texto(f: FormData, k: string) {
 
 // ---------- Agenda ----------
 
-export async function mudarStatus(id: string, status: "atendido" | "faltou" | "cancelado" | "agendado"): Promise<Res> {
+export async function mudarStatus(id: string, status: "faltou" | "cancelado" | "agendado"): Promise<Res> {
   await exigirSessao();
   if (!z.uuid().safeParse(id).success) return falha("Agendamento inválido.");
   try {
-    await db.update(agendamento).set({ status }).where(eq(agendamento.id, id));
+    // Se estava atendido, a entrada gerada some junto (atômico).
+    await db.batch([
+      db.update(agendamento).set({ status }).where(eq(agendamento.id, id)),
+      db.delete(lancamento).where(eq(lancamento.agendamentoId, id)),
+    ]);
   } catch (e) {
     if (ehConflitoDeHorario(e)) return falha("Esse horário já foi ocupado por outro agendamento.");
     throw e;
   }
-  revalidatePath("/painel");
+  revalidatePath("/painel", "layout");
   return ok;
 }
 
@@ -229,5 +234,69 @@ export async function salvarHorarios(barbeiroId: string, f: FormData): Promise<R
     await apagar;
   }
   revalidatePath("/painel/cadastros");
+  return ok;
+}
+
+// ---------- Financeiro ----------
+
+const FORMAS = ["pix", "dinheiro", "cartao"] as const;
+export type Forma = (typeof FORMAS)[number];
+
+/** Marca como atendido e gera a entrada (valor do agendamento) na mesma operação. */
+export async function concluirAtendimento(id: string, forma: Forma): Promise<Res> {
+  await exigirSessao();
+  if (!z.uuid().safeParse(id).success || !FORMAS.includes(forma)) return falha("Dados inválidos.");
+  const [ag] = await db.select().from(agendamento).where(eq(agendamento.id, id));
+  if (!ag) return falha("Agendamento não encontrado.");
+  await db.batch([
+    db.update(agendamento).set({ status: "atendido" }).where(eq(agendamento.id, id)),
+    db
+      .insert(lancamento)
+      .values({
+        tipo: "entrada",
+        valorCentavos: ag.precoCentavos,
+        categoria: "Atendimento",
+        formaPagamento: forma,
+        data: ag.inicio,
+        agendamentoId: id,
+      })
+      .onConflictDoUpdate({
+        target: lancamento.agendamentoId,
+        set: { formaPagamento: forma, valorCentavos: ag.precoCentavos },
+      }),
+  ]);
+  revalidatePath("/painel", "layout");
+  return ok;
+}
+
+export async function criarLancamento(f: FormData): Promise<Res> {
+  await exigirSessao();
+  const tipo = texto(f, "tipo");
+  const valor = reaisParaCentavos(texto(f, "valor"));
+  const categoria = texto(f, "categoria");
+  const dia = texto(f, "dia");
+  const forma = texto(f, "forma");
+  if ((tipo !== "entrada" && tipo !== "saida") || valor === null || valor <= 0 || categoria.length < 2 || !ymdValido(dia)) {
+    return falha("Confira tipo, valor (ex.: 120,00), categoria e data.");
+  }
+  if (forma && !FORMAS.includes(forma as Forma)) return falha("Forma de pagamento inválida.");
+  await db.insert(lancamento).values({
+    tipo,
+    valorCentavos: valor,
+    categoria: categoria.slice(0, 60),
+    formaPagamento: (forma || null) as Forma | null,
+    data: instanteLocal(dia, 12 * 60),
+    descricao: texto(f, "descricao").slice(0, 200) || null,
+  });
+  revalidatePath("/painel", "layout");
+  return ok;
+}
+
+/** Entradas geradas por atendimento só mudam pelo status do agendamento. */
+export async function removerLancamento(id: string): Promise<Res> {
+  await exigirSessao();
+  if (!z.uuid().safeParse(id).success) return falha("Lançamento inválido.");
+  await db.delete(lancamento).where(and(eq(lancamento.id, id), isNull(lancamento.agendamentoId)));
+  revalidatePath("/painel", "layout");
   return ok;
 }
