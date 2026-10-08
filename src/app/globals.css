@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b0b0c;
+  --surface: #151517;
+  --surface-2: #1d1d20;
+  --line: #2a2a2e;
+  --foreground: #ececee;
+  --muted: #9a9aa2;
+  --silver: #c9ccd2;
+  --silver-strong: #e8eaee;
+  --danger: #e5645a;
+  --ok: #5fbf8a;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-silver: var(--silver);
+  --color-silver-strong: var(--silver-strong);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@layer components {
+  .titulo {
+    @apply font-semibold uppercase tracking-[0.18em] text-silver-strong;
+  }
+  .card {
+    @apply rounded-xl border border-line bg-surface p-4;
+  }
+  .btn {
+    @apply inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-surface-2 px-4 text-sm font-medium text-foreground transition hover:border-silver disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primario {
+    @apply border-transparent bg-silver-strong text-black hover:bg-white hover:border-transparent;
+  }
+  .btn-perigo {
+    @apply text-danger hover:border-danger;
+  }
+  .campo {
+    @apply min-h-11 w-full rounded-lg border border-line bg-surface-2 px-3 text-base text-foreground outline-none placeholder:text-muted focus:border-silver;
+  }
+  .rotulo {
+    @apply mb-1 block text-xs uppercase tracking-wider text-muted;
+  }
 }
