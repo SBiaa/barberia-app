@@ -14,6 +14,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         ["/painel/relatorios", "Relatórios"],
         ["/painel/bloqueios", "Bloqueios"],
         ["/painel/cadastros", "Cadastros"],
+        ["/painel/perfil", "Meu perfil"],
       ]
     : [
         ["/painel", "Minha agenda"],
@@ -21,6 +22,7 @@ export default async function PainelLayout({ children }: LayoutProps<"/painel">)
         ["/painel/horarios", "Meus horários"],
         ["/painel/bloqueios", "Folgas"],
         ["/painel/clientes", "Meus clientes"],
+        ["/painel/perfil", "Meu perfil"],
       ];
   return (
     <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-4">
