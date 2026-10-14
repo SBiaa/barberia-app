@@ -16,6 +16,7 @@ import {
 } from "@/lib/tempo";
 import { linkWhatsapp, mascararWhatsapp } from "@/lib/whatsapp";
 import { linkAvaliacaoGoogle } from "@/lib/config";
+import { exigirSessao } from "@/lib/sessao";
 import { msgAvaliacao, msgLembrete, whatsappCom } from "@/lib/mensagens";
 import { urlSite } from "@/lib/site";
 import { BotoesWhatsapp } from "./botoes-whatsapp";
@@ -33,10 +34,12 @@ const COR = {
 } as const;
 
 export default async function Agenda({ searchParams }: PageProps<"/painel">) {
+  const sessao = await exigirSessao();
   const sp = await searchParams;
   const dia = typeof sp.dia === "string" && ymdValido(sp.dia) ? sp.dia : hoje();
   const semana = sp.vista === "semana";
-  const barbeiroFiltro = typeof sp.barbeiro === "string" ? sp.barbeiro : undefined;
+  // Barbeiro só enxerga a própria agenda; o filtro vem da sessão, nunca da URL.
+  const barbeiroFiltro = sessao.barbeiroId ?? (typeof sp.barbeiro === "string" ? sp.barbeiro : undefined);
 
   // Semana começa na segunda.
   const dow = diaSemanaDe(dia);
@@ -45,7 +48,11 @@ export default async function Agenda({ searchParams }: PageProps<"/painel">) {
 
   const [linkGoogle, barbeiros, servicos, itens] = await Promise.all([
     linkAvaliacaoGoogle(),
-    db.select().from(barbeiro).where(eq(barbeiro.ativo, true)).orderBy(asc(barbeiro.nome)),
+    db
+      .select()
+      .from(barbeiro)
+      .where(and(eq(barbeiro.ativo, true), sessao.barbeiroId ? eq(barbeiro.id, sessao.barbeiroId) : undefined))
+      .orderBy(asc(barbeiro.nome)),
     db.select().from(servico).where(eq(servico.ativo, true)).orderBy(asc(servico.nome)),
     db
       .select({

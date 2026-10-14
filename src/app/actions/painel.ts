@@ -14,10 +14,12 @@ import {
   horarioFuncionamento,
   lancamento,
   servico,
+  session,
 } from "@/db/schema";
 import { ehConflitoDeHorario } from "@/lib/erros";
 import { reaisParaCentavos } from "@/lib/dinheiro";
-import { exigirSessao } from "@/lib/sessao";
+import { criarAcessoBarbeiro, redefinirSenhaBarbeiro, removerAcessoBarbeiro } from "@/lib/acesso";
+import { exigirAdminAcao, exigirSessaoAcao, podeAcessarBarbeiro, type Sessao } from "@/lib/sessao";
 import { horaParaMin, instanteLocal, ymdValido } from "@/lib/tempo";
 import { normalizarWhatsapp } from "@/lib/whatsapp";
 
@@ -29,11 +31,19 @@ function texto(f: FormData, k: string) {
   return String(f.get(k) ?? "").trim();
 }
 
+/** Carrega o agendamento e confirma que a sessão pode mexer nele (admin: todos; barbeiro: só os seus). */
+async function agendamentoAutorizado(sessao: Sessao, id: string) {
+  const [ag] = await db.select().from(agendamento).where(eq(agendamento.id, id));
+  if (!ag || !podeAcessarBarbeiro(sessao, ag.barbeiroId)) return null;
+  return ag;
+}
+
 // ---------- Agenda ----------
 
 export async function mudarStatus(id: string, status: "faltou" | "cancelado" | "agendado"): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   if (!z.uuid().safeParse(id).success) return falha("Agendamento inválido.");
+  if (!(await agendamentoAutorizado(sessao, id))) return falha("Agendamento não encontrado.");
   try {
     // Se estava atendido, a entrada gerada some junto (atômico).
     await db.batch([
@@ -49,11 +59,11 @@ export async function mudarStatus(id: string, status: "faltou" | "cancelado" | "
 }
 
 export async function remarcarAdmin(id: string, dia: string, hora: string): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   if (!z.uuid().safeParse(id).success || !ymdValido(dia) || !/^\d{2}:\d{2}$/.test(hora)) {
     return falha("Dados inválidos.");
   }
-  const [ag] = await db.select().from(agendamento).where(eq(agendamento.id, id));
+  const ag = await agendamentoAutorizado(sessao, id);
   if (!ag) return falha("Agendamento não encontrado.");
   const dur = ag.fim.getTime() - ag.inicio.getTime();
   const inicio = instanteLocal(dia, horaParaMin(hora));
@@ -69,7 +79,7 @@ export async function remarcarAdmin(id: string, dia: string, hora: string): Prom
 
 /** O dono pode encaixar fora da grade (ex.: cliente que chegou na hora), mas não sobrepor outro. */
 export async function criarAgendamentoAdmin(f: FormData): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   const p = z
     .object({
       servicoId: z.uuid(),
@@ -86,6 +96,7 @@ export async function criarAgendamentoAdmin(f: FormData): Promise<Res> {
       nome: texto(f, "nome"),
     });
   if (!p.success) return falha("Preencha todos os campos corretamente.");
+  if (!podeAcessarBarbeiro(sessao, p.data.barbeiroId)) return falha("Você só pode agendar na sua própria agenda.");
   const whatsapp = normalizarWhatsapp(texto(f, "whatsapp"));
   if (!whatsapp) return falha("WhatsApp inválido.");
 
@@ -119,13 +130,14 @@ export async function criarAgendamentoAdmin(f: FormData): Promise<Res> {
 // ---------- Bloqueios ----------
 
 export async function criarBloqueio(f: FormData): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   const barbeiroId = texto(f, "barbeiroId");
   const dia = texto(f, "dia");
   const diaTodo = f.get("diaTodo") === "on";
   const de = diaTodo ? "00:00" : texto(f, "de");
   const ate = diaTodo ? "24:00" : texto(f, "ate");
   if (!z.uuid().safeParse(barbeiroId).success || !ymdValido(dia)) return falha("Dados inválidos.");
+  if (!podeAcessarBarbeiro(sessao, barbeiroId)) return falha("Você só pode bloquear a sua própria agenda.");
   const ini = horaParaMin(de);
   const fim = horaParaMin(ate);
   if (Number.isNaN(ini) || Number.isNaN(fim) || fim <= ini) return falha("O fim precisa ser depois do início.");
@@ -141,8 +153,10 @@ export async function criarBloqueio(f: FormData): Promise<Res> {
 }
 
 export async function removerBloqueio(id: string): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   if (!z.uuid().safeParse(id).success) return falha("Bloqueio inválido.");
+  const [b] = await db.select().from(bloqueio).where(eq(bloqueio.id, id));
+  if (!b || !podeAcessarBarbeiro(sessao, b.barbeiroId)) return falha("Bloqueio não encontrado.");
   await db.delete(bloqueio).where(eq(bloqueio.id, id));
   revalidatePath("/painel/bloqueios");
   return ok;
@@ -151,7 +165,7 @@ export async function removerBloqueio(id: string): Promise<Res> {
 // ---------- Cadastros ----------
 
 export async function salvarServico(f: FormData): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   const id = texto(f, "id");
   const nome = texto(f, "nome");
   const preco = reaisParaCentavos(texto(f, "preco"));
@@ -169,14 +183,14 @@ export async function salvarServico(f: FormData): Promise<Res> {
 }
 
 export async function alternarServico(id: string, ativo: boolean): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   await db.update(servico).set({ ativo }).where(eq(servico.id, id));
   revalidatePath("/painel/cadastros");
   return ok;
 }
 
 export async function salvarBarbeiro(f: FormData): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   const id = texto(f, "id");
   const nome = texto(f, "nome");
   const comissao = Number(texto(f, "comissaoPct") || 0);
@@ -193,8 +207,10 @@ export async function salvarBarbeiro(f: FormData): Promise<Res> {
 }
 
 export async function alternarBarbeiro(id: string, ativo: boolean): Promise<Res> {
-  await exigirSessao();
-  await db.update(barbeiro).set({ ativo }).where(eq(barbeiro.id, id));
+  await exigirAdminAcao();
+  const [b] = await db.update(barbeiro).set({ ativo }).where(eq(barbeiro.id, id)).returning();
+  // Barbeiro desativado perde o acesso na hora.
+  if (!ativo && b?.userId) await db.delete(session).where(eq(session.userId, b.userId));
   revalidatePath("/painel/cadastros");
   return ok;
 }
@@ -204,7 +220,7 @@ export async function alternarBarbeiro(id: string, ativo: boolean): Promise<Res>
  * "09:00-12:00, 13:00-19:00" (vazio = folga).
  */
 export async function salvarHorarios(barbeiroId: string, f: FormData): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   if (!z.uuid().safeParse(barbeiroId).success) return falha("Barbeiro inválido.");
 
   const linhas: { barbeiroId: string; diaSemana: number; abreMin: number; fechaMin: number }[] = [];
@@ -245,9 +261,9 @@ export type Forma = (typeof FORMAS)[number];
 
 /** Marca como atendido e gera a entrada (valor do agendamento) na mesma operação. */
 export async function concluirAtendimento(id: string, forma: Forma): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   if (!z.uuid().safeParse(id).success || !FORMAS.includes(forma)) return falha("Dados inválidos.");
-  const [ag] = await db.select().from(agendamento).where(eq(agendamento.id, id));
+  const ag = await agendamentoAutorizado(sessao, id);
   if (!ag) return falha("Agendamento não encontrado.");
   await db.batch([
     db.update(agendamento).set({ status: "atendido" }).where(eq(agendamento.id, id)),
@@ -271,7 +287,7 @@ export async function concluirAtendimento(id: string, forma: Forma): Promise<Res
 }
 
 export async function criarLancamento(f: FormData): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   const tipo = texto(f, "tipo");
   const valor = reaisParaCentavos(texto(f, "valor"));
   const categoria = texto(f, "categoria");
@@ -295,7 +311,7 @@ export async function criarLancamento(f: FormData): Promise<Res> {
 
 /** Entradas geradas por atendimento só mudam pelo status do agendamento. */
 export async function removerLancamento(id: string): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   if (!z.uuid().safeParse(id).success) return falha("Lançamento inválido.");
   await db.delete(lancamento).where(and(eq(lancamento.id, id), isNull(lancamento.agendamentoId)));
   revalidatePath("/painel", "layout");
@@ -305,8 +321,9 @@ export async function removerLancamento(id: string): Promise<Res> {
 // ---------- Relacionamento (Fase 3) ----------
 
 export async function marcarMensagemEnviada(id: string, tipo: "lembrete" | "avaliacao"): Promise<Res> {
-  await exigirSessao();
+  const sessao = await exigirSessaoAcao();
   if (!z.uuid().safeParse(id).success) return falha("Agendamento inválido.");
+  if (!(await agendamentoAutorizado(sessao, id))) return falha("Agendamento não encontrado.");
   await db
     .update(agendamento)
     .set(tipo === "lembrete" ? { lembreteEnviadoEm: new Date() } : { avaliacaoPedidaEm: new Date() })
@@ -316,7 +333,7 @@ export async function marcarMensagemEnviada(id: string, tipo: "lembrete" | "aval
 }
 
 export async function salvarLinkAvaliacao(f: FormData): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   const url = texto(f, "linkGoogle");
   if (!url) {
     await db.delete(configuracao).where(eq(configuracao.chave, "link_avaliacao_google"));
@@ -334,7 +351,7 @@ export async function salvarLinkAvaliacao(f: FormData): Promise<Res> {
 
 /** LGPD: remove os dados pessoais do cliente, mantendo o histórico financeiro anônimo. */
 export async function anonimizarCliente(id: string): Promise<Res> {
-  await exigirSessao();
+  await exigirAdminAcao();
   if (!z.uuid().safeParse(id).success) return falha("Cliente inválido.");
   await db.batch([
     db
@@ -344,5 +361,31 @@ export async function anonimizarCliente(id: string): Promise<Res> {
     db.update(cliente).set({ nome: "Cliente removido", whatsapp: `removido-${id}` }).where(eq(cliente.id, id)),
   ]);
   revalidatePath("/painel/clientes");
+  return ok;
+}
+
+// ---------- Acesso de barbeiros (somente admin) ----------
+
+export async function criarAcesso(barbeiroId: string, f: FormData): Promise<Res> {
+  await exigirAdminAcao();
+  if (!z.uuid().safeParse(barbeiroId).success) return falha("Barbeiro inválido.");
+  const erro = await criarAcessoBarbeiro(barbeiroId, texto(f, "email"), String(f.get("senha") ?? ""));
+  if (erro) return falha(erro);
+  revalidatePath("/painel/cadastros");
+  return ok;
+}
+
+export async function redefinirSenha(barbeiroId: string, f: FormData): Promise<Res> {
+  await exigirAdminAcao();
+  if (!z.uuid().safeParse(barbeiroId).success) return falha("Barbeiro inválido.");
+  const erro = await redefinirSenhaBarbeiro(barbeiroId, String(f.get("senha") ?? ""));
+  return erro ? falha(erro) : ok;
+}
+
+export async function removerAcesso(barbeiroId: string): Promise<Res> {
+  await exigirAdminAcao();
+  if (!z.uuid().safeParse(barbeiroId).success) return falha("Barbeiro inválido.");
+  await removerAcessoBarbeiro(barbeiroId);
+  revalidatePath("/painel/cadastros");
   return ok;
 }

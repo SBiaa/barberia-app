@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agendamento, cliente } from "@/db/schema";
 import { formatarReais } from "@/lib/dinheiro";
 import { msgRetorno, whatsappCom } from "@/lib/mensagens";
+import { exigirSessao } from "@/lib/sessao";
 import { urlSite } from "@/lib/site";
 import { agora, formatarDataLonga, ymdDe } from "@/lib/tempo";
 import { mascararWhatsapp } from "@/lib/whatsapp";
@@ -11,6 +12,8 @@ import { mascararWhatsapp } from "@/lib/whatsapp";
 export const dynamic = "force-dynamic";
 
 export default async function Clientes({ searchParams }: PageProps<"/painel/clientes">) {
+  const sessao = await exigirSessao();
+  const meu = sessao.barbeiroId;
   const sp = await searchParams;
   const busca = typeof sp.q === "string" ? sp.q.trim().slice(0, 60) : "";
   const diasParam = Number(typeof sp.sumidos === "string" ? sp.sumidos : 0);
@@ -27,8 +30,18 @@ export default async function Clientes({ searchParams }: PageProps<"/painel/clie
       proximo: sql<Date | null>`min(${agendamento.inicio}) filter (where ${agendamento.status} = 'agendado' and ${agendamento.inicio} > now())`,
     })
     .from(cliente)
-    .leftJoin(agendamento, eq(agendamento.clienteId, cliente.id))
-    .where(busca ? or(ilike(cliente.nome, `%${busca}%`), ilike(cliente.whatsapp, `%${busca.replace(/\D/g, "") || "—"}%`)) : undefined)
+    .leftJoin(
+      agendamento,
+      and(eq(agendamento.clienteId, cliente.id), meu ? eq(agendamento.barbeiroId, meu) : undefined),
+    )
+    .where(
+      and(
+        busca
+          ? or(ilike(cliente.nome, `%${busca}%`), ilike(cliente.whatsapp, `%${busca.replace(/\D/g, "") || "—"}%`))
+          : undefined,
+        meu ? sql`${agendamento.id} is not null` : undefined,
+      ),
+    )
     .groupBy(cliente.id)
     .orderBy(desc(sql`max(${agendamento.inicio})`))
     .limit(300);

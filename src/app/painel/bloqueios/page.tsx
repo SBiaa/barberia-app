@@ -1,14 +1,21 @@
-import { asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { barbeiro, bloqueio } from "@/db/schema";
+import { exigirSessao } from "@/lib/sessao";
 import { formatarDataLonga, formatarHora, hoje, instanteLocal, ymdDe } from "@/lib/tempo";
 import { FormBloqueio, RemoverBloqueio } from "./forms";
 
 export const dynamic = "force-dynamic";
 
 export default async function Bloqueios() {
+  const sessao = await exigirSessao();
+  const meu = sessao.barbeiroId;
   const [barbeiros, lista] = await Promise.all([
-    db.select().from(barbeiro).where(eq(barbeiro.ativo, true)).orderBy(asc(barbeiro.nome)),
+    db
+      .select()
+      .from(barbeiro)
+      .where(and(eq(barbeiro.ativo, true), meu ? eq(barbeiro.id, meu) : undefined))
+      .orderBy(asc(barbeiro.nome)),
     db
       .select({
         id: bloqueio.id,
@@ -19,7 +26,7 @@ export default async function Bloqueios() {
       })
       .from(bloqueio)
       .innerJoin(barbeiro, eq(barbeiro.id, bloqueio.barbeiroId))
-      .where(gte(bloqueio.fim, instanteLocal(hoje(), 0)))
+      .where(and(gte(bloqueio.fim, instanteLocal(hoje(), 0)), meu ? eq(bloqueio.barbeiroId, meu) : undefined))
       .orderBy(asc(bloqueio.inicio)),
   ]);
 

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { agendamento, barbeiro, cliente, servico } from "@/db/schema";
 import { formatarReais } from "@/lib/dinheiro";
+import { exigirSessao } from "@/lib/sessao";
 import { formatarDataLonga, formatarHora, ymdDe } from "@/lib/tempo";
 import { mascararWhatsapp } from "@/lib/whatsapp";
 import { BotaoAnonimizar } from "./anonimizar";
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 const ROTULO = { agendado: "Agendado", atendido: "Atendido", faltou: "Faltou", cancelado: "Cancelado" } as const;
 
 export default async function ClienteDetalhe({ params }: PageProps<"/painel/clientes/[id]">) {
+  const sessao = await exigirSessao();
+  const meu = sessao.barbeiroId;
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const [c] = await db.select().from(cliente).where(eq(cliente.id, id));
@@ -31,8 +34,11 @@ export default async function ClienteDetalhe({ params }: PageProps<"/painel/clie
     .from(agendamento)
     .innerJoin(servico, eq(servico.id, agendamento.servicoId))
     .innerJoin(barbeiro, eq(barbeiro.id, agendamento.barbeiroId))
-    .where(eq(agendamento.clienteId, id))
+    .where(and(eq(agendamento.clienteId, id), meu ? eq(agendamento.barbeiroId, meu) : undefined))
     .orderBy(desc(agendamento.inicio));
+
+  // Barbeiro só abre clientes que ele atendeu.
+  if (meu && historico.length === 0) notFound();
 
   const anonimo = c.whatsapp.startsWith("removido-");
 
@@ -63,7 +69,7 @@ export default async function ClienteDetalhe({ params }: PageProps<"/painel/clie
         ))}
       </section>
 
-      {!anonimo && (
+      {!anonimo && sessao.ehAdmin && (
         <section className="card space-y-2">
           <h2 className="titulo text-xs">Privacidade (LGPD)</h2>
           <p className="text-sm text-muted">

@@ -1,17 +1,23 @@
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { barbeiro, horarioFuncionamento, servico } from "@/db/schema";
+import { barbeiro, horarioFuncionamento, servico, user } from "@/db/schema";
 import { minParaHora } from "@/lib/tempo";
 import { linkAvaliacaoGoogle } from "@/lib/config";
-import { BarbeiroForm, GradeHorarios, LinkAvaliacaoForm, ServicoForm } from "./forms";
+import { AcessoBarbeiro, BarbeiroForm, GradeHorarios, LinkAvaliacaoForm, ServicoForm } from "./forms";
+import { exigirAdmin } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
 export default async function Cadastros() {
+  await exigirAdmin();
   const [linkGoogle, servicos, barbeiros, horarios] = await Promise.all([
     linkAvaliacaoGoogle(),
     db.select().from(servico).orderBy(asc(servico.nome)),
-    db.select().from(barbeiro).orderBy(asc(barbeiro.nome)),
+    db
+      .select({ b: barbeiro, email: user.email })
+      .from(barbeiro)
+      .leftJoin(user, eq(user.id, barbeiro.userId))
+      .orderBy(asc(barbeiro.nome)),
     db.select().from(horarioFuncionamento),
   ]);
 
@@ -49,10 +55,11 @@ export default async function Cadastros() {
           Informe as faixas de cada dia, separadas por vírgula (ex.: <code>09:00-12:00, 13:00-19:00</code>). O intervalo entre
           as faixas é o almoço. Deixe vazio para folga.
         </p>
-        {barbeiros.map((b) => (
+        {barbeiros.map(({ b, email }) => (
           <div key={b.id} className="card space-y-4">
             <BarbeiroForm barbeiro={{ id: b.id, nome: b.nome, comissaoPct: b.comissaoPct, ativo: b.ativo }} />
             <GradeHorarios barbeiroId={b.id} inicial={grade(b.id)} />
+            <AcessoBarbeiro barbeiroId={b.id} email={email} />
           </div>
         ))}
         <BarbeiroForm />

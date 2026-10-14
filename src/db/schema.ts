@@ -10,6 +10,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { user } from "./auth-schema";
+
 export * from "./auth-schema";
 
 // Valores monetários sempre em centavos (inteiro). Datas em timestamptz (UTC);
@@ -33,6 +35,10 @@ export const barbeiro = pgTable("barbeiro", {
   nome: text("nome").notNull(),
   ativo: boolean("ativo").notNull().default(true),
   comissaoPct: integer("comissao_pct").notNull().default(0),
+  // Login do barbeiro (opcional). Usuário ligado a um barbeiro só enxerga os próprios dados.
+  userId: text("user_id")
+    .unique()
+    .references(() => user.id, { onDelete: "set null" }),
   criadoEm: timestamp("criado_em", { withTimezone: true }).notNull().defaultNow(),
 });
 

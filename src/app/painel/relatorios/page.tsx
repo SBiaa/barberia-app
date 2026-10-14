@@ -5,10 +5,12 @@ import { formatarReais } from "@/lib/dinheiro";
 import { resolverPeriodo } from "@/lib/periodo";
 import { montarRelatorio } from "@/lib/relatorio";
 import { SeletorPeriodo } from "../seletor-periodo";
+import { exigirAdmin } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
 export default async function Relatorios({ searchParams }: PageProps<"/painel/relatorios">) {
+  await exigirAdmin();
   const periodo = resolverPeriodo(await searchParams);
 
   const [ags, lancs] = await Promise.all([

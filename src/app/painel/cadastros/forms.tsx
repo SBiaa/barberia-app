@@ -5,6 +5,9 @@ import { useState, useTransition } from "react";
 import {
   alternarBarbeiro,
   alternarServico,
+  criarAcesso,
+  redefinirSenha,
+  removerAcesso,
   salvarBarbeiro,
   salvarHorarios,
   salvarLinkAvaliacao,
@@ -122,6 +125,56 @@ export function LinkAvaliacaoForm({ atual }: { atual: string }) {
       </div>
       {(erro || msg) && <p role="alert" className={`text-sm ${erro ? "text-danger" : "text-ok"}`}>{erro ?? msg}</p>}
       <button className="btn btn-primario" disabled={pendente}>Salvar</button>
+    </form>
+  );
+}
+
+export function AcessoBarbeiro({ barbeiroId, email }: { barbeiroId: string; email: string | null }) {
+  const { erro, msg, pendente, rodar } = useAcao();
+  if (email) {
+    return (
+      <div className="space-y-3 border-t border-line pt-4">
+        <p className="text-sm">
+          <span className="text-muted">Acesso ao painel: </span>
+          <strong className="font-medium">{email}</strong>
+        </p>
+        <form className="flex flex-wrap items-end gap-2" action={(f) => rodar(() => redefinirSenha(barbeiroId, f))}>
+          <div className="min-w-48 flex-1">
+            <label className="rotulo">Nova senha</label>
+            <input name="senha" type="password" className="campo" minLength={8} autoComplete="new-password" required />
+          </div>
+          <button className="btn" disabled={pendente}>Redefinir senha</button>
+          <button
+            type="button"
+            className="btn btn-perigo"
+            disabled={pendente}
+            onClick={() =>
+              confirm("Remover o acesso deste barbeiro? Ele não conseguirá mais entrar.") &&
+              rodar(() => removerAcesso(barbeiroId))
+            }
+          >
+            Remover acesso
+          </button>
+        </form>
+        {(erro || msg) && <p role="alert" className={`text-sm ${erro ? "text-danger" : "text-ok"}`}>{erro ?? msg}</p>}
+      </div>
+    );
+  }
+  return (
+    <form className="space-y-3 border-t border-line pt-4" action={(f) => rodar(() => criarAcesso(barbeiroId, f))}>
+      <p className="text-sm text-muted">Sem acesso ao painel. Crie um login para ele ver a própria agenda e ganhos.</p>
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div>
+          <label className="rotulo">E-mail</label>
+          <input name="email" type="email" className="campo" autoComplete="off" required />
+        </div>
+        <div>
+          <label className="rotulo">Senha (mín. 8)</label>
+          <input name="senha" type="password" className="campo" minLength={8} autoComplete="new-password" required />
+        </div>
+        <button className="btn btn-primario" disabled={pendente}>Criar acesso</button>
+      </div>
+      {(erro || msg) && <p role="alert" className={`text-sm ${erro ? "text-danger" : "text-ok"}`}>{erro ?? msg}</p>}
     </form>
   );
 }

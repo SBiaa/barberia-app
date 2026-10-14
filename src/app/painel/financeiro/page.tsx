@@ -6,12 +6,14 @@ import { resolverPeriodo } from "@/lib/periodo";
 import { formatarDataLonga, hoje, ymdDe } from "@/lib/tempo";
 import { SeletorPeriodo } from "../seletor-periodo";
 import { FormLancamento, RemoverLancamento } from "./forms";
+import { exigirAdmin } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
 const FORMA = { pix: "Pix", dinheiro: "Dinheiro", cartao: "Cartão" } as const;
 
 export default async function Financeiro({ searchParams }: PageProps<"/painel/financeiro">) {
+  await exigirAdmin();
   const periodo = resolverPeriodo(await searchParams);
   const itens = await db
     .select()
